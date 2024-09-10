@@ -1,0 +1,136 @@
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  name: elastic-cluster
+spec:
+  version: 8.6.2
+  volumeClaimDeletePolicy: DeleteOnScaledownOnly
+  nodeSets:
+  - name: masters
+    count: 2
+    config:
+      node.roles: ["master"]
+    podTemplate:
+      spec:
+        priorityClassName: elastic-cluster-high-priority
+        containers:
+        - name: elasticsearch
+          resources:
+            limits:
+              cpu: 2
+              memory: 2.5Gi
+            requests:
+              cpu: 1
+              memory: 2Gi
+        initContainers:
+        - name: sysctl
+          securityContext:
+            privileged: true
+            runAsUser: 0
+          command: ['sh', '-c', 'sysctl -w vm.max_map_count=262144']
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+  - name: data
+    count: 1
+    config:
+      node.roles: ["data", "ingest"]
+    podTemplate:
+      spec:
+        priorityClassName: elastic-cluster-high-priority
+        containers:
+        - name: elasticsearch
+          resources:
+            limits:
+              cpu: 2
+              memory: 4Gi
+            requests:
+              cpu: 1
+              memory: 2Gi
+        initContainers:
+        - name: sysctl
+          securityContext:
+            privileged: true
+            runAsUser: 0
+          command: ['sh', '-c', 'sysctl -w vm.max_map_count=262144']
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 100Gi
+  - name: data-warm
+    count: 1
+    config:
+      node.roles: ["data", "data_warm"]
+    podTemplate:
+      spec:
+        priorityClassName: elastic-cluster-high-priority
+        containers:
+        - name: elasticsearch
+          resources:
+            limits:
+              cpu: 1.5
+              memory: 3Gi
+            requests:
+              cpu: 1
+              memory: 2Gi
+        initContainers:
+        - name: sysctl
+          securityContext:
+            privileged: true
+            runAsUser: 0
+          command: ['sh', '-c', 'sysctl -w vm.max_map_count=262144']
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 150Gi
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: elastic-cluster-high-priority
+value: 10000000
+globalDefault: false
+description: "This priority class should be used for elasticsearch cluster pods only."
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: filebeat-high-priority
+value: 2000000
+globalDefault: false
+description: "This priority class should be used for filebeat pods only."
+---
+apiVersion: kibana.k8s.elastic.co/v1
+kind: Kibana
+metadata:
+  name: kibana
+spec:
+  version: 8.6.2
+  count: 1
+  elasticsearchRef:
+    name: elastic-cluster
+  podTemplate:
+    spec:
+      priorityClassName: elastic-cluster-high-priority
+      containers:
+      - name: kibana
+        resources:
+          limits:
+            memory: 2.5Gi
+            cpu: 2
